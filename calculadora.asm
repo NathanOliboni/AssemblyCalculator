@@ -12,11 +12,11 @@ section .data
 	ctrl : db "%f %c %f", 0
 	modoAberturaArquivo : db "a", 0
 	nomeArquivo : db "saida.txt", 0
-	ctrlArquivo : db "%lf %c %lf = %lf", 10, 0
-	ctrlArquivoNaoDisponivel : db "%lf %c %lf = funcionalidade não disponível", 10, 0
+	ctrlArquivo : db "%.2lf %c %.2lf = %.2lf", 10, 0
+	ctrlArquivoNaoDisponivel : db "%.2lf %c %.2lf = funcionalidade não disponível", 10, 0
     ctrlEntradaInvalida : db "Operando de entrada inválido = %c", 10 , 0
 	elevadoAZero : dd 1.0, 0
-	flag	: db 0, 0
+
 	
 section .bss
 	op1 : resd 1
@@ -76,43 +76,8 @@ main:
 	movss xmm3, [op1] ; Para a exponenciação
 	je callExp
 
-    jmp entradaInvalida 
+    call entradaInvalida 
 	
-escreveArquivo:	
-	mov r9, [flag] ; Caso a flag tenha sido alterada
-	cmp r9, 1 ; Tera tido seu valor aumentado
-	je naoDisponivel ; Logo não é uma operação válida
-
-	movss [resultado], xmm2
-	mov rax, 2
-	mov rdi, qword[arq]
-	mov rsi, ctrlArquivo
-	cvtss2sd xmm0, [op1]
-	mov rdx, [operacao]
-	cvtss2sd xmm1, [op2]
-	cvtss2sd xmm2, [resultado]
-	call fprintf
-	jmp _fim
-		
-	naoDisponivel:
-		movss [resultado], xmm2
-		mov rax, 2
-		mov rdi, qword[arq]
-		mov rsi, ctrlArquivoNaoDisponivel
-		cvtss2sd xmm0, [op1]
-		mov rdx, [operacao]
-		cvtss2sd xmm1, [op2]
-		call fprintf
-		jmp _fim
-
-    entradaInvalida:
-        mov rdi, qword[arq]
-        mov rax, 2
-        mov rsi, ctrlEntradaInvalida
-        mov rdx, [operacao]
-        call fprintf
-        jmp _fim
-
 _fim:
 	mov rdi, qword[arq]
 	call fclose
@@ -126,26 +91,29 @@ _fim:
 	
 callSoma:
 	call soma
-	jmp escreveArquivo
+	jmp _fim
 callSub:
 	call sub
-    ; Trocar valores de xmm1 e xmm0 para escrever, pois é op2 - op1
-    ; op1 -> receber valor de op2
-    ; op2 -> receber valor de op1
-    movss xmm4, [op1]
-    movss xmm5, [op2] 
-    movss [op1], xmm5
-    movss [op2], xmm4
-	jmp escreveArquivo
+	; Trocar valores de xmm1 e xmm0 para escrever, pois é op2 - op1
+	; op1 -> receber valor de op2
+	; op2 -> receber valor de op1
+	movss xmm4, [op1]
+	movss xmm5, [op2] 
+	movss [op1], xmm5
+	movss [op2], xmm4
+	call disponivel
+	jmp _fim
+	
 callMult:
 	call mult
-	jmp escreveArquivo
+	jmp _fim
+	
 callDiv:
 	call div
-	jmp escreveArquivo
+	jmp _fim
 callExp:
 	call exp
-	jmp escreveArquivo
+	jmp _fim
 
 soma:
 	push rbp
@@ -156,6 +124,8 @@ soma:
 		
 	; xmm2 = xmm0+xmm1
 	vaddss xmm2, xmm0, xmm1
+	
+	call disponivel
 	
 	mov rsp, rbp
 	pop rbp
@@ -203,14 +173,14 @@ div:
 	
 	;xmm2 = xmm0*xmm1
 	vdivss xmm2, xmm0, xmm1
+	call disponivel
 	
 	mov rsp, rbp
 	pop rbp
 	ret
 	
 	divPorZero:
-    		mov r9, 1
-    		mov [flag], r9
+    		call naoDisponivel
     
     		mov rsp, rbp
     		pop rbp
@@ -226,7 +196,7 @@ exp:
 	; Compara para ver se op2 não é negativo
     	mov r11, 0
     	cmp r8, r11
-    	jl indisponivel
+	jl indisponivel
 
 	mov r10, 1
 	cmp r10, r8
@@ -240,6 +210,7 @@ exp:
         jl for
 
 	movss xmm2, xmm0
+	call disponivel
 	
         mov rsp, rbp
         pop rbp
@@ -247,6 +218,7 @@ exp:
         
     zero:
     	movss xmm2, [elevadoAZero] ; Caso seja elevado a zero -> sempre será 1
+    	call disponivel
     	
     	mov rsp, rbp
     	pop rbp
@@ -254,15 +226,64 @@ exp:
     	
     igual:
     	movss xmm2, xmm0 ; Caso seja igual a 1, será o mesmo número, sem ser multiplicado
+    	call disponivel
     	
     	mov rsp, rbp
     	pop rbp
     	ret
     	
     indisponivel:
-    	mov r9, 1
-    	mov [flag], r9
+    	call naoDisponivel
     
     	mov rsp, rbp
     	pop rbp
     	ret
+    	
+disponivel:	
+	push rbp
+	mov rbp, rsp
+	
+	movss [resultado], xmm2
+	mov rax, 2
+	mov rdi, qword[arq]
+	mov rsi, ctrlArquivo
+	cvtss2sd xmm0, [op1]
+	mov rdx, [operacao]
+	cvtss2sd xmm1, [op2]
+	cvtss2sd xmm2, [resultado]
+	call fprintf
+	
+	mov rsp, rbp
+	pop rbp
+	ret
+		
+naoDisponivel:
+	push rbp
+	mov rbp, rsp
+	
+	movss [resultado], xmm2
+	mov rax, 2
+	mov rdi, qword[arq]
+	mov rsi, ctrlArquivoNaoDisponivel
+	cvtss2sd xmm0, [op1]
+	mov rdx, [operacao]
+	cvtss2sd xmm1, [op2]
+	call fprintf
+	
+	mov rsp, rbp
+	pop rbp
+	ret
+
+entradaInvalida:
+	push rbp
+	mov rbp, rsp
+	
+        mov rdi, qword[arq]
+        mov rax, 2
+        mov rsi, ctrlEntradaInvalida
+        mov rdx, [operacao]
+        call fprintf
+        
+        mov rsp, rbp
+        pop rbp
+        ret
